@@ -8,7 +8,7 @@ use winit::event::{ElementState, KeyEvent, MouseButton, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, NamedKey};
 use winit::raw_window_handle::HasWindowHandle;
-use winit::window::{Window, WindowAttributes};
+use winit::window::{self, Window, WindowAttributes};
 
 use glutin::config::{Config, ConfigTemplateBuilder, GetGlConfig};
 use glutin::context::{
@@ -237,7 +237,10 @@ impl ApplicationHandler for App {
                 let speed = 0.1;
                 match logical_key {
                     Key::Character(k) if k == "r" => {
-                        self.scene = SceneState::init()
+                        self.scene.camera.set_position_and_forward(
+                            glm::vec3(0.0, 0.0, 2.0),
+                            glm::vec3(0.0, 0.0, -1.0),
+                        );
                     }
                     Key::Character(k) if k == "w" => {
                         self.scene.camera.translate_local(0., 0., -speed)
@@ -371,7 +374,7 @@ fn create_gl_context(window: &Window, gl_config: &Config) -> NotCurrentContext {
 fn window_attributes() -> WindowAttributes {
     Window::default_attributes()
         .with_transparent(true)
-        .with_title("Glutin triangle gradient example (press Escape to exit)")
+        .with_title("Boraini's Raymarcher (press Escape to exit)")
 }
 
 enum GlDisplayCreationState {
