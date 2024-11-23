@@ -8,7 +8,7 @@ use winit::event::{ElementState, KeyEvent, MouseButton, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, NamedKey};
 use winit::raw_window_handle::HasWindowHandle;
-use winit::window::{self, Window, WindowAttributes};
+use winit::window::{Window, WindowAttributes};
 
 use glutin::config::{Config, ConfigTemplateBuilder, GetGlConfig};
 use glutin::context::{
@@ -20,10 +20,9 @@ use glutin::surface::{Surface, SwapInterval, WindowSurface};
 
 use glutin_winit::{DisplayBuilder, GlWindow};
 
-use crate::camera::Camera;
-use crate::light::SunLight;
 use crate::renderer::*;
-use crate::three_d::LocalToGlobal;
+use crate::scene::Scene;
+use crate::shader::mandelbulb::mandelbulb;
 
 pub mod gl {
     #![allow(clippy::all)]
@@ -61,7 +60,7 @@ struct App {
     gl_context: Option<PossiblyCurrentContext>,
     gl_display: GlDisplayCreationState,
     exit_state: Result<(), Box<dyn Error>>,
-    scene: SceneState,
+    scene: Scene,
 }
 
 impl App {
@@ -73,8 +72,15 @@ impl App {
             gl_context: None,
             state: None,
             renderer: None,
-            scene: SceneState::init(),
+            scene: Scene::init(),
         }
+    }
+
+    fn get_time(&self) -> u128 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
     }
 
     fn request_redraw(&self) {
@@ -237,9 +243,10 @@ impl ApplicationHandler for App {
                 let speed = 0.1;
                 match logical_key {
                     Key::Character(k) if k == "r" => {
-                        self.scene.camera.set_position_and_forward(
+                        self.scene.camera.animate_between(
                             glm::vec3(0.0, 0.0, 2.0),
                             glm::vec3(0.0, 0.0, -1.0),
+                            1000,
                         );
                     }
                     Key::Character(k) if k == "w" => {
@@ -271,12 +278,13 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
+                let dist = mandelbulb(&self.scene.camera.position, 4.0, 0.0);
                 match delta {
                     winit::event::MouseScrollDelta::LineDelta(_, dy) => {
-                        self.scene.camera.zoom(dy);
+                        self.scene.camera.zoom(dy, dist);
                     }
                     winit::event::MouseScrollDelta::PixelDelta(PhysicalPosition { x, .. }) => {
-                        self.scene.camera.zoom(x as f32);
+                        self.scene.camera.zoom(x as f32, dist);
                     }
                 };
                 self.request_redraw();
@@ -300,12 +308,8 @@ impl ApplicationHandler for App {
                     let gl_context = self.gl_context.as_ref().unwrap();
                     let renderer = self.renderer.as_ref().unwrap();
                     if self.scene.should_update() {
-                        self.scene.update_time(
-                            SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .unwrap()
-                                .as_millis() as f32,
-                        );
+                        self.scene.update_time(self.get_time());
+                        self.request_redraw();
                     }
                     renderer.draw(&self.scene.camera, &self.scene.light);
                     gl_surface.swap_buffers(gl_context).unwrap();
@@ -389,43 +393,6 @@ struct AppState {
     // NOTE: Window should be dropped after all resources created using its
     // raw-window-handle.
     window: Window,
-}
-
-struct SceneState {
-    camera: Camera,
-    light: SunLight,
-    mouse: Option<glm::Vec2>,
-    mouse_down: bool,
-}
-
-impl SceneState {
-    pub fn init() -> Self {
-        let mut scene = SceneState {
-            camera: Camera::new(),
-            light: SunLight::new(),
-            mouse: None,
-            mouse_down: false,
-        };
-        scene
-            .camera
-            .set_position_and_forward(glm::vec3(0.0, 0.0, 2.0), scene.camera.forward);
-        scene.light.direction = glm::normalize(glm::vec3(-1.0, -1.0, -1.0));
-        scene
-    }
-
-    pub fn should_update(&self) -> bool {
-        self.camera.should_update()
-    }
-    pub fn update_time(&mut self, t: f32) {
-        self.camera.update_time(t);
-        self.light.direction = self
-            .camera
-            .to_global(
-                &glm::vec3(0., 0., 0.),
-                &glm::normalize(glm::vec3(-1., -1., -1.)),
-            )
-            .1;
-    }
 }
 
 // Find the config with the maximum number of samples, so our triangle will be

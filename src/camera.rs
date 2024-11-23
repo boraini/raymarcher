@@ -11,16 +11,22 @@ pub struct Camera {
     next_position: glm::Vec3,
     prev_forward: glm::Vec3,
     next_forward: glm::Vec3,
-    t: f32,
-    t_start: f32,
-    t_end: f32,
+    t: u128,
+    t_start: u128,
+    t_end: u128,
     aspect: f32,
+    update_flag: bool,
 }
 
-fn easing(t: f32, a: f32, b: f32) -> f32 {
-    let raw = (t - a) / (b - a);
-
-    4.0 * (raw - 0.5) * (raw - 0.5) * (raw - 0.5) + 0.5
+fn easing(t: u128, a: u128, b: u128) -> f32 {
+    let t = ((t - a) as f32) / ((b - a) as f32);
+    if t < 0.0 {
+        return 0.0;
+    }
+    if t > 1.0 {
+        return 1.0;
+    }
+    return t * t * (3.0 - 2.0 * t);
 }
 
 impl Camera {
@@ -32,15 +38,17 @@ impl Camera {
             prev_forward: glm::vec3(0.0, 0.0, -1.0),
             next_position: glm::vec3(0.0, 0.0, 0.0),
             next_forward: glm::vec3(0.0, 0.0, -1.0),
-            t: 0.0,
-            t_start: 0.0,
-            t_end: 0.0,
+            t: 0,
+            t_start: 0,
+            t_end: 0,
             aspect: 1.0,
             fov: std::f32::consts::PI / 2.0,
+            update_flag: true,
         }
     }
 
-    pub fn update_time(&mut self, t: f32) {
+    pub fn update_time(&mut self, t: u128) {
+        self.t = t;
         let fac = easing(t, self.t_start, self.t_end);
         if fac <= 0.0 {
             self.position = self.prev_position;
@@ -54,6 +62,7 @@ impl Camera {
         }
         self.position = glm::mix_s(self.prev_position, self.next_position, fac);
         self.forward = glm::mix_s(self.prev_forward, self.next_forward, fac);
+        self.update_flag = false;
     }
 
     pub fn set_aspect(&mut self, w: f32, h: f32) {
@@ -67,16 +76,16 @@ impl Camera {
     pub fn set_position_and_forward(&mut self, next_position: glm::Vec3, next_forward: glm::Vec3) {
         self.next_position = next_position;
         self.next_forward = next_forward;
-        self.t_start = -2.0;
-        self.t_end = -1.0;
-        self.update_time(0.0);
+        self.t_start = 0;
+        self.t_end = 1;
+        self.t = 2;
     }
 
     pub fn animate_between(
         &mut self,
         next_position: glm::Vec3,
         next_forward: glm::Vec3,
-        duration: f32,
+        duration: u128,
     ) {
         self.update_time(self.t);
         self.prev_position = self.position;
@@ -98,7 +107,7 @@ impl Camera {
         let mut i = 0;
         for x in [-1.0, 1.0] {
             for y in [-1.0, 1.0] {
-                dest[i] = self.forward + right * x + up * y;
+                dest[i] = glm::normalize(self.forward + right * x + up * y);
                 i += 1;
             }
         }
@@ -107,12 +116,12 @@ impl Camera {
     }
 
     pub fn get_stop_distance(&self) -> f32 {
-        0.001 * glm::length(self.forward)
+        0.00001 * glm::length(self.forward)
     }
 
     pub fn translate_local(&mut self, dx: f32, dy: f32, dz: f32) {
         let (d, _) = self.to_global(&glm::vec3(dx, dy, dz), &glm::vec3(0.0, 0.0, 0.0));
-        self.position = d;
+        self.set_position_and_forward(d, self.forward);
     }
 
     pub fn orbit_controls(&mut self, dx: f32, dy: f32) {
@@ -138,18 +147,26 @@ impl Camera {
         let next_position = self.position + self.forward - next_forward;
 
         self.set_position_and_forward(next_position, next_forward);
+        self.update_flag = true;
     }
 
-    pub fn zoom(&mut self, d: f32) {
-        let fac = glm::exp(0.3 * d);
-        let next_forward = self.forward * fac;
-        let next_position = self.position + self.forward - next_forward;
+    pub fn zoom(&mut self, scroll_amount: f32, distance: f32) {
+        let fac = glm::exp(0.3 * scroll_amount);
+        let center_dist = glm::min(distance, glm::length(self.forward));
+        let center_point = self.position + glm::normalize(self.forward) * center_dist;
+        let next_forward = if fac > 1.0 {
+            self.forward * fac
+        } else {
+            glm::normalize(self.forward) * fac * center_dist
+        };
+        let next_position = center_point - next_forward;
 
         self.set_position_and_forward(next_position, next_forward);
+        self.update_flag = true;
     }
 
     pub fn should_update(&self) -> bool {
-        self.t < self.t_end
+        self.update_flag || self.t < self.t_end
     }
 }
 

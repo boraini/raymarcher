@@ -5,6 +5,8 @@ mod camera;
 mod light;
 mod macros;
 mod renderer;
+mod scene;
+mod shader;
 mod three_d;
 
 pub fn main() {

@@ -25,15 +25,17 @@ float sdRoundBox( vec3 p, vec3 b, float r ) {
   return length(max(q,0.0)) + min(max(q.x,max(q.y,q.z)),0.0) - r;
 }
 
-float mandel(vec3 p, float power, float phase) {
+float mandel(vec3 p, float power, float phase, out float trap) {
     vec3 z = p;
     vec3 dz = vec3(0.0);
     float r, theta, phi;
     float dr = 1.0;
     float t0 = 1.0;
-    for (int i = 0; i < 16; ++i) { // change i < # for iterations.
+    trap = 1.0;
+    for (int i = 0; i < 32; ++i) { // change i < # for iterations.
         r = length(z);
         if(r > 2.0) continue;
+        trap = min(trap, dot(z, z));
         theta = atan(z.y / z.x);
         phi = asin(z.z / r) + phase;
         dr = pow(r, power - 1.0) * dr * power + 1.0;
@@ -85,8 +87,10 @@ float mandelbox(vec3 pos) {
 	return ((length(p.xyz) - absScalem1) / p.w - AbsScaleRaisedTo1mIters);
 }
 
-float my_mandel(vec3 p) {
-    return min(mandel(p, 7.0, 0.8), length(p));
+float my_mandel(vec3 p, out float trap) {
+    // return min(mandel(p, 7.0, 0.8, trap), length(p));
+
+    return min(mandel(p, 4.0, 0.0, trap), length(p));
 
     // return sdRoundBox(p, vec3(1.0, 0.8, 0.6), 0.1);
 
@@ -96,24 +100,26 @@ float my_mandel(vec3 p) {
 }
 
 vec3 normal(vec3 p) {
-    float epsilon = 0.001; // arbitrary — should be smaller than any surface detail in your distance function, but not so small as to get lost in float precision
-    float centerDistance = my_mandel(p);
-    float xDistance = my_mandel(p + vec3(epsilon, 0, 0));
-    float yDistance = my_mandel(p + vec3(0, epsilon, 0));
-    float zDistance = my_mandel(p + vec3(0, 0, epsilon));
+    float trap = 1.0;
+    float epsilon = stop_distance; // arbitrary — should be smaller than any surface detail in your distance function, but not so small as to get lost in float precision
+    float centerDistance = my_mandel(p, trap);
+    float xDistance = my_mandel(p + vec3(epsilon, 0, 0), trap);
+    float yDistance = my_mandel(p + vec3(0, epsilon, 0), trap);
+    float zDistance = my_mandel(p + vec3(0, 0, epsilon), trap);
     return (vec3(xDistance, yDistance, zDistance) - centerDistance) / epsilon;
 }
 
 HitInfo cast_ray() {
     vec3 p = origin;
 
-    for (int j = 0; j < 100; j++) {
-        float d = my_mandel(p);
+    for (int j = 0; j < 128; j++) {
+        float trap = 1.0;
+        float d = my_mandel(p, trap);
 
         p += d * ray_direction;
 
         if (d < stop_distance) {
-            return HitInfo(p, vec3(0.6, 0.6, 1.0), normal(p));
+            return HitInfo(p, trap * vec3(1.0, 1.0, 1.0), normal(p));
         }
     }
 
@@ -126,7 +132,8 @@ void main() {
     if (info.position == vec3(0.0, 0.0, 0.0)) {
         gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
     } else {
-        float dot = dot(light_dir, -info.normal);
+        // float dot = dot(light_dir, -info.normal);
+        float dot = 1;
         gl_FragColor = vec4(light_color * info.color * dot, 1.0);
     }
 }
